@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 
 const FONT = "Outfit, sans-serif";
 const GOOGLE_FONT = "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap";
-const GEMINI_KEY = import.meta.env.VITE_GEMINI_KEY || "";
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + GEMINI_KEY;
+// AI Teacher powered by Claude API (same as AI Coach - works from browser)
 
 const TEACHER_SYSTEM = "You are Sir Alam, a warm and expert AI Teacher for AAM (Md. Ashraful Alam Mazid), a new Mechanical Engineering student at CUET (Chittagong University of Engineering and Technology) in Bangladesh. " +
   "AAM is following a 60-day pre-campus preparation plan with 3 tracks: " +
@@ -442,43 +441,44 @@ export default function App() {
     setAiLoad(false);
   };
 
-  // ── Send chat to Gemini ─────────────────────────────────────────
+  // ── Send chat to Claude (AI Teacher) ───────────────────────────
   const sendChat = async (inputText) => {
     if (!inputText.trim()) return;
-    const userMsg = { role:"user", text: inputText.trim() };
-    const newMsgs = [...chatMsgs, userMsg];
-    setChatMsgs(newMsgs);
+    setChatMsgs(prev => [...prev, { role:"user", text: inputText.trim() }]);
     setChatInput("");
     setChatLoading(true);
 
-    const dayCtx = startDate ? "AAM is currently on Day " + today + " of the 60-day plan (" + (DD[today-1]?.title||"") + "). Progress: " + Math.round(Object.values(prog).filter(Boolean).length / TOTAL_TASKS * 100) + "% overall complete." : "";
+    const dayCtx = startDate
+      ? "AAM is currently on Day " + today + " of the 60-day plan (" + (DD[today-1]?.title||"") + "). Overall progress: " + Math.round(Object.values(prog).filter(Boolean).length / TOTAL_TASKS * 100) + "% complete."
+      : "AAM has not started the plan yet.";
 
-    // Build Gemini contents array with full history
-    const contents = [
-      { role:"user", parts:[{ text: TEACHER_SYSTEM + " " + dayCtx }] },
-      { role:"model", parts:[{ text: "Hello AAM! I am Sir Alam, your dedicated AI Teacher for this 60-day journey. I am here to help you understand any topic from your plan - whether it is Python, n8n, Calculus, FBD, Differential Equations, Engineering Drawing, or anything else. What would you like to learn today?" }] },
-      ...geminiHist,
-      { role:"user", parts:[{ text: inputText.trim() }] }
+    // Build full multi-turn message history for Claude
+    const claudeMessages = [
+      ...geminiHist.map(m => ({ role: m.r, content: m.t })),
+      { role:"user", content: inputText.trim() }
     ];
 
     try {
-      const r = await fetch(GEMINI_URL, {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ contents, generationConfig:{ temperature:0.7, maxOutputTokens:1024 } })
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1024,
+          system: TEACHER_SYSTEM + " " + dayCtx,
+          messages: claudeMessages
+        })
       });
       const data = await r.json();
-      const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I could not get a response. Please try again!";
-      const aiMsg = { role:"ai", text: reply };
-      setChatMsgs(prev => [...prev, aiMsg]);
-      // Update history for multi-turn
+      const reply = data?.content?.[0]?.text || "Sorry, I could not get a response. Please try again!";
+      setChatMsgs(prev => [...prev, { role:"ai", text: reply }]);
       setGeminiHist(prev => [
         ...prev,
-        { role:"user",  parts:[{ text: inputText.trim() }] },
-        { role:"model", parts:[{ text: reply }] }
+        { r:"user",      t: inputText.trim() },
+        { r:"assistant", t: reply }
       ]);
     } catch(e) {
-      setChatMsgs(prev => [...prev, { role:"ai", text: "Connection error! Please check your internet and try again. If the problem persists, your API key may need to be updated." }]);
+      setChatMsgs(prev => [...prev, { role:"ai", text: "Connection error! Please check your internet and try again." }]);
     }
     setChatLoading(false);
   };
@@ -518,7 +518,7 @@ export default function App() {
             <div style={{fontSize:"18px",fontWeight:"800",color:th.text}}>Sir Alam - AI Teacher</div>
             <div style={{fontSize:"12px",color:"#10B981",marginTop:"2px",display:"flex",alignItems:"center",gap:"5px"}}>
               <span style={{width:"7px",height:"7px",background:"#10B981",borderRadius:"50%",display:"inline-block"}}></span>
-              Powered by Gemini 2.0 Flash - Always ready to teach
+              Powered by Claude AI - Always ready to teach
             </div>
           </div>
           <ThemeBtn/>
@@ -608,7 +608,7 @@ export default function App() {
             </button>
           </div>
           <div style={{maxWidth:"720px",margin:"6px auto 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div style={{fontSize:"12px",color:th.muted}}>Gemini 2.0 Flash - Ask about any topic in your 60-day plan</div>
+            <div style={{fontSize:"12px",color:th.muted}}>Claude AI - Ask about any topic in your 60-day plan</div>
             {chatMsgs.length > 0 && (
               <button onClick={()=>{setChatMsgs([]);setGeminiHist([]);}}
                 style={{background:"transparent",border:"none",color:th.muted,cursor:"pointer",fontFamily:FONT,fontSize:"12px",textDecoration:"underline"}}>
