@@ -426,7 +426,7 @@ export default function App() {
     const d=DD[dn-1]; const {done,total}=getCnt(dn);
     const doneList = Object.entries(d.blocks).flatMap(([b,data])=>data.tasks.filter((_,i)=>prog[dn+"-"+b+"-"+i])).slice(0,4);
     try {
-      const r = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},
+      const r = await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:900,
           system:"You are AAM's personal study coach. AAM (Md. Ashraful Alam Mazid) is a new CUET Mechanical Engineering student following a 60-day pre-campus preparation plan covering AI Automation, Engineering fundamentals, and English. He aims to earn freelance income on Upwork/Fiverr. Be warm, direct, specific. Under 160 words. Use emojis naturally.",
           messages:[{role:"user",content:"Day "+dn+" - "+d.title+" | "+done+"/"+total+" tasks done ("+Math.round(done/total*100)+"%)\nCompleted: "+doneList.join(" | ")+"\nNotes: "+(notes[dn]||"No notes")+"\nGive: 1) Progress assessment 2) Specific insight 3) Push for remaining 4) Tip for Day "+Math.min(60,dn+1)}]})});
@@ -435,7 +435,7 @@ export default function App() {
       const nf = {...aiFb,[dn]:{text:txt,time:new Date().toLocaleString("en-BD")}};
       setAiFb(nf); sv("f4",JSON.stringify(nf));
     } catch {
-      const nf = {...aiFb,[dn]:{text:"Great work on Day "+dn+"! "+done+"/"+total+" tasks done. Stay consistent - you are building skills that will serve you for life! \U0001F680",time:new Date().toLocaleString("en-BD")}};
+      const nf = {...aiFb,[dn]:{text:"Great work on Day "+dn+"! "+done+"/"+total+" tasks done. Stay consistent - you are building skills that will serve you for life!",time:new Date().toLocaleString("en-BD")}};
       setAiFb(nf); sv("f4",JSON.stringify(nf));
     }
     setAiLoad(false);
@@ -459,7 +459,7 @@ export default function App() {
     ];
 
     try {
-      const r = await fetch("https://api.anthropic.com/v1/messages", {
+      const r = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
