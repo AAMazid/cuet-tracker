@@ -2,7 +2,24 @@ import { useState, useEffect, useCallback } from "react";
 
 const FONT = "Outfit, sans-serif";
 const GOOGLE_FONT = "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap";
+const GEMINI_KEY = "AIzaSyCctwkobcILcJrlS19gB7BywPFsrfdRi2E";
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + GEMINI_KEY;
 
+const TEACHER_SYSTEM = "You are Sir Alam, a warm and expert AI Teacher for AAM (Md. Ashraful Alam Mazid), a new Mechanical Engineering student at CUET (Chittagong University of Engineering and Technology) in Bangladesh. " +
+  "AAM is following a 60-day pre-campus preparation plan with 3 tracks: " +
+  "1. AI Automation - n8n, Make.com, Claude Code, Python, FastAPI, Streamlit, RAG, AI Agents. " +
+  "2. Mechanical Engineering - Calculus (derivatives, integrals, ODEs, Laplace), Statics, Dynamics, FBD, Work-Energy-Momentum, Vibrations, Engineering Drawing, FreeCAD. " +
+  "3. English and Prompt Engineering - Technical vocabulary, writing, scholarship essays, prompt techniques. " +
+  "Your teaching style: Explain concepts in very simple clear language first then go deeper if asked. " +
+  "Use real-world analogies and examples relevant to Bangladesh and engineering life. " +
+  "For math and physics: always show step-by-step solutions with clear working. " +
+  "For coding: provide clean well-commented code examples. " +
+  "For engineering drawing: describe clearly what to draw step by step. " +
+  "Be encouraging and patient - AAM is a beginner. " +
+  "Ask follow-up questions to check understanding. " +
+  "Keep responses focused and not too long (under 300 words unless solving a detailed problem). " +
+  "Use emojis naturally to make learning fun. " +
+  "If AAM shares what day of the plan he is on, tailor your help to that day topics.";
 // ── Theme ────────────────────────────────────────────────────────
 const T = {
   dark:  { bg:"#0A0F1E", surface:"#0F172A", card:"#131C2E", border:"#1E293B", border2:"#334155", text:"#E2E8F0", sub:"#94A3B8", muted:"#475569", aiGrad:"linear-gradient(135deg,#1A1035,#0F172A)", aiBorder:"#4C1D9566", aiTxt:"#C4B5FD", hero:"linear-gradient(160deg,#0F172A 0%,#1A1035 60%,#0A0F1E 100%)", toggleBg:"#1E293B", toggleIcon:"☀️", toggleLabel:"Light" },
@@ -358,12 +375,16 @@ export default function App() {
   const [dark, setDark]         = useState(true);
   const [prog, setProg]         = useState({});
   const [notes, setNotes]       = useState({});
-  const [view, setView]         = useState("dash"); // dash | day | task
+  const [view, setView]         = useState("dash"); // dash | day | task | chat
   const [selDay, setSelDay]     = useState(null);
-  const [selTask, setSelTask]   = useState(null);   // {task,block,idx,dayNum}
+  const [selTask, setSelTask]   = useState(null);
   const [aiFb, setAiFb]         = useState({});
   const [aiLoad, setAiLoad]     = useState(false);
   const [startDate, setStart]   = useState(null);
+  const [chatMsgs, setChatMsgs]       = useState([]);
+  const [chatInput, setChatInput]     = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [geminiHist, setGeminiHist]   = useState([]);
 
   const th = dark ? T.dark : T.light;
 
@@ -415,10 +436,51 @@ export default function App() {
       const nf = {...aiFb,[dn]:{text:txt,time:new Date().toLocaleString("en-BD")}};
       setAiFb(nf); sv("f4",JSON.stringify(nf));
     } catch {
-      const nf = {...aiFb,[dn]:{text:"Great work on Day "+dn+"! "+done+"/"+total+" tasks done. Stay consistent - you are building skills that will serve you for life! 🚀",time:new Date().toLocaleString("en-BD")}};
+      const nf = {...aiFb,[dn]:{text:"Great work on Day "+dn+"! "+done+"/"+total+" tasks done. Stay consistent - you are building skills that will serve you for life! \U0001F680",time:new Date().toLocaleString("en-BD")}};
       setAiFb(nf); sv("f4",JSON.stringify(nf));
     }
     setAiLoad(false);
+  };
+
+  // ── Send chat to Gemini ─────────────────────────────────────────
+  const sendChat = async (inputText) => {
+    if (!inputText.trim()) return;
+    const userMsg = { role:"user", text: inputText.trim() };
+    const newMsgs = [...chatMsgs, userMsg];
+    setChatMsgs(newMsgs);
+    setChatInput("");
+    setChatLoading(true);
+
+    const dayCtx = startDate ? "AAM is currently on Day " + today + " of the 60-day plan (" + (DD[today-1]?.title||"") + "). Progress: " + Math.round(Object.values(prog).filter(Boolean).length / TOTAL_TASKS * 100) + "% overall complete." : "";
+
+    // Build Gemini contents array with full history
+    const contents = [
+      { role:"user", parts:[{ text: TEACHER_SYSTEM + " " + dayCtx }] },
+      { role:"model", parts:[{ text: "Hello AAM! I am Sir Alam, your dedicated AI Teacher for this 60-day journey. I am here to help you understand any topic from your plan - whether it is Python, n8n, Calculus, FBD, Differential Equations, Engineering Drawing, or anything else. What would you like to learn today?" }] },
+      ...geminiHist,
+      { role:"user", parts:[{ text: inputText.trim() }] }
+    ];
+
+    try {
+      const r = await fetch(GEMINI_URL, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ contents, generationConfig:{ temperature:0.7, maxOutputTokens:1024 } })
+      });
+      const data = await r.json();
+      const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I could not get a response. Please try again!";
+      const aiMsg = { role:"ai", text: reply };
+      setChatMsgs(prev => [...prev, aiMsg]);
+      // Update history for multi-turn
+      setGeminiHist(prev => [
+        ...prev,
+        { role:"user",  parts:[{ text: inputText.trim() }] },
+        { role:"model", parts:[{ text: reply }] }
+      ]);
+    } catch(e) {
+      setChatMsgs(prev => [...prev, { role:"ai", text: "Connection error! Please check your internet and try again. If the problem persists, your API key may need to be updated." }]);
+    }
+    setChatLoading(false);
   };
 
   // ── ThemeToggle component ────────────────────────────────────────
@@ -429,6 +491,135 @@ export default function App() {
       <span style={{fontSize:"12px",color:th.sub,fontFamily:FONT,fontWeight:"600"}}>{th.toggleLabel}</span>
     </button>
   );
+
+  // ── AI TEACHER CHAT PAGE ─────────────────────────────────────────
+  if (view === "chat") {
+    const QUICK = [
+      "Explain limits in calculus with a simple example",
+      "How does n8n webhook work? Give me a beginner example",
+      "What is a Free Body Diagram? Show me step by step",
+      "Explain Python OOP with a real-world analogy",
+      "What is the Work-Energy theorem? Solve a simple problem",
+      "How does Claude Code work and how do I start?",
+      "What is prompt engineering? Teach me the basics",
+      "Explain differential equations with a simple example",
+      "How do I draw an isometric view in engineering drawing?",
+      "What is RAG in AI? Explain simply",
+    ];
+    return (
+      <div style={{minHeight:"100vh",background:th.bg,fontFamily:FONT,color:th.text,display:"flex",flexDirection:"column"}}>
+        <link href={GOOGLE_FONT} rel="stylesheet"/>
+        {/* Header */}
+        <div style={{background:th.surface,borderBottom:"1px solid "+th.border,padding:"14px 18px",display:"flex",alignItems:"center",gap:"12px",flexShrink:0,position:"sticky",top:0,zIndex:50}}>
+          <button onClick={()=>setView("dash")} style={{background:th.card,border:"1px solid "+th.border2,color:th.sub,padding:"8px 14px",borderRadius:"10px",cursor:"pointer",fontFamily:FONT,fontSize:"15px",flexShrink:0}}>
+            Home
+          </button>
+          <div style={{flex:1}}>
+            <div style={{fontSize:"18px",fontWeight:"800",color:th.text}}>Sir Alam - AI Teacher</div>
+            <div style={{fontSize:"12px",color:"#10B981",marginTop:"2px",display:"flex",alignItems:"center",gap:"5px"}}>
+              <span style={{width:"7px",height:"7px",background:"#10B981",borderRadius:"50%",display:"inline-block"}}></span>
+              Powered by Gemini 2.0 Flash - Always ready to teach
+            </div>
+          </div>
+          <ThemeBtn/>
+        </div>
+
+        {/* Chat messages area */}
+        <div id="chat-scroll" style={{flex:1,overflowY:"auto",padding:"16px 18px",display:"flex",flexDirection:"column",gap:"14px",maxWidth:"720px",width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
+
+          {/* Welcome message */}
+          {chatMsgs.length === 0 && (
+            <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+              <div style={{background:"linear-gradient(135deg,#1A1035,#1E293B)",border:"1px solid #7C3AED44",borderRadius:"16px",padding:"20px"}}>
+                <div style={{fontSize:"32px",marginBottom:"8px",textAlign:"center"}}>{String.fromCodePoint(128104,8205,127979)}</div>
+                <div style={{fontSize:"18px",fontWeight:"700",color:th.text,textAlign:"center",marginBottom:"6px"}}>Assalamu Alaikum, AAM!</div>
+                <div style={{fontSize:"15px",color:th.sub,lineHeight:"1.7",textAlign:"center"}}>
+                  I am <strong style={{color:"#A78BFA"}}>Sir Alam</strong>, your personal AI Teacher. I am here to explain anything from your 60-day plan - Calculus, Python, n8n, FBD, ODEs, Engineering Drawing, Prompt Engineering, or anything else you need help with!
+                </div>
+              </div>
+              <div style={{fontSize:"13px",fontWeight:"700",color:th.muted,letterSpacing:"1px",textAlign:"center",textTransform:"uppercase"}}>Quick Questions to Start</div>
+              <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+                {QUICK.map((q,i) => (
+                  <button key={i} onClick={()=>sendChat(q)}
+                    style={{background:th.surface,border:"1px solid "+th.border,borderRadius:"10px",padding:"12px 16px",cursor:"pointer",fontFamily:FONT,fontSize:"14px",color:th.text,textAlign:"left",transition:"all 0.2s"}}
+                    onMouseEnter={e=>{e.currentTarget.style.borderColor="#7C3AED";e.currentTarget.style.background=dark?"#1E1B4B22":"#EDE9FE";}}
+                    onMouseLeave={e=>{e.currentTarget.style.borderColor=th.border;e.currentTarget.style.background=th.surface;}}>
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Chat messages */}
+          {chatMsgs.map((msg, i) => {
+            const isUser = msg.role === "user";
+            return (
+              <div key={i} style={{display:"flex",flexDirection:"column",alignItems:isUser?"flex-end":"flex-start",gap:"4px"}}>
+                <div style={{fontSize:"11px",color:th.muted,marginBottom:"2px",paddingLeft:isUser?"0":"4px",paddingRight:isUser?"4px":"0"}}>
+                  {isUser ? "You" : "Sir Alam"}
+                </div>
+                <div style={{
+                  maxWidth:"88%",
+                  background: isUser ? "linear-gradient(135deg,#7C3AED,#3B82F6)" : th.surface,
+                  color: isUser ? "white" : th.text,
+                  border: isUser ? "none" : "1px solid "+th.border,
+                  borderRadius: isUser ? "16px 16px 4px 16px" : "4px 16px 16px 16px",
+                  padding:"13px 16px",
+                  fontSize:"15px",
+                  lineHeight:"1.7",
+                  whiteSpace:"pre-wrap",
+                  wordBreak:"break-word",
+                }}>
+                  {msg.text}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Typing indicator */}
+          {chatLoading && (
+            <div style={{display:"flex",alignItems:"flex-start",gap:"4px",flexDirection:"column"}}>
+              <div style={{fontSize:"11px",color:th.muted,paddingLeft:"4px"}}>Sir Alam</div>
+              <div style={{background:th.surface,border:"1px solid "+th.border,borderRadius:"4px 16px 16px 16px",padding:"14px 18px",display:"flex",gap:"5px",alignItems:"center"}}>
+                {[0,1,2].map(j=>(
+                  <div key={j} style={{width:"8px",height:"8px",borderRadius:"50%",background:"#7C3AED",animation:"bounce 1.2s infinite",animationDelay:(j*0.2)+"s",opacity:0.7}}></div>
+                ))}
+                <style dangerouslySetInnerHTML={{__html:"@keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}"}} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Input area */}
+        <div style={{background:th.surface,borderTop:"1px solid "+th.border,padding:"14px 18px",flexShrink:0,position:"sticky",bottom:0}}>
+          <div style={{maxWidth:"720px",margin:"0 auto",display:"flex",gap:"10px",alignItems:"flex-end"}}>
+            <textarea
+              value={chatInput}
+              onChange={e=>setChatInput(e.target.value)}
+              onKeyDown={e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); sendChat(chatInput); } }}
+              placeholder="Ask Sir Alam anything... (Press Enter to send, Shift+Enter for new line)"
+              rows={2}
+              style={{flex:1,background:th.card,border:"1px solid "+th.border2,borderRadius:"12px",padding:"12px 16px",fontFamily:FONT,fontSize:"15px",color:th.text,resize:"none",outline:"none",lineHeight:"1.5",boxSizing:"border-box"}}
+            />
+            <button onClick={()=>sendChat(chatInput)} disabled={chatLoading || !chatInput.trim()}
+              style={{background: chatLoading||!chatInput.trim() ? th.card : "linear-gradient(135deg,#7C3AED,#3B82F6)",color: chatLoading||!chatInput.trim() ? th.muted : "white",border:"none",borderRadius:"12px",padding:"12px 18px",cursor: chatLoading||!chatInput.trim() ? "not-allowed":"pointer",fontFamily:FONT,fontSize:"22px",flexShrink:0,transition:"all 0.2s",minWidth:"52px"}}>
+              {chatLoading ? "..." : "Send"}
+            </button>
+          </div>
+          <div style={{maxWidth:"720px",margin:"6px auto 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div style={{fontSize:"12px",color:th.muted}}>Gemini 2.0 Flash - Ask about any topic in your 60-day plan</div>
+            {chatMsgs.length > 0 && (
+              <button onClick={()=>{setChatMsgs([]);setGeminiHist([]);}}
+                style={{background:"transparent",border:"none",color:th.muted,cursor:"pointer",fontFamily:FONT,fontSize:"12px",textDecoration:"underline"}}>
+                Clear chat
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ── TASK RESOURCE PAGE ───────────────────────────────────────────
   if (view==="task" && selTask) {
@@ -453,7 +644,7 @@ export default function App() {
           <div onClick={()=>toggleTask(dayNum,block,idx)}
             style={{background:th.surface,border:"2px solid "+(done?bm.color+"88":th.border),borderRadius:"14px",padding:"18px 20px",marginBottom:"18px",display:"flex",gap:"14px",alignItems:"flex-start",cursor:"pointer"}}>
             <div style={{width:"26px",height:"26px",borderRadius:"8px",border:"2.5px solid "+(done?bm.color:th.border2),background:done?bm.color:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",marginTop:"2px"}}>
-              {done && <span style={{color:"white",fontSize:"13px",fontWeight:"800"}}>✓</span>}
+              {done && <span style={{color:"white",fontSize:"13px",fontWeight:"800"}}>{String.fromCharCode(10003)}</span>}
             </div>
             <div>
               <div style={{fontSize:"17px",fontWeight:"600",color:th.text,lineHeight:"1.5",marginBottom:"4px"}}>{task}</div>
@@ -490,7 +681,7 @@ export default function App() {
             </>
           ) : (
             <div style={{background:th.surface,border:"1px solid "+th.border,borderRadius:"14px",padding:"28px",textAlign:"center",marginBottom:"18px"}}>
-              <div style={{fontSize:"36px",marginBottom:"10px"}}>📝</div>
+              <div style={{fontSize:"36px",marginBottom:"10px"}}>{String.fromCodePoint(128221)}</div>
               <div style={{fontSize:"17px",fontWeight:"600",color:th.text,marginBottom:"8px"}}>Practice Task</div>
               <div style={{fontSize:"15px",color:th.muted,lineHeight:"1.7",marginBottom:"16px"}}>This is a practice or review task. Use what you have already learned. If stuck, ask Claude directly!</div>
               <a href="https://claude.ai" target="_blank" rel="noopener noreferrer"
@@ -536,6 +727,11 @@ export default function App() {
               <div style={{fontSize:"26px",fontWeight:"800",color:pct===100?"#10B981":phc}}>{pct}%</div>
               <div style={{fontSize:"11px",color:th.muted}}>{done}/{total}</div>
             </div>
+            <button onClick={()=>setView("chat")}
+              style={{background:"linear-gradient(135deg,#065F46,#047857)",color:"white",border:"none",borderRadius:"10px",padding:"8px 12px",cursor:"pointer",fontFamily:FONT,fontSize:"12px",fontWeight:"700",flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",gap:"1px"}}>
+              <span style={{fontSize:"16px"}}>{String.fromCodePoint(128104,8205,127979)}</span>
+              <span>Sir Alam</span>
+            </button>
             <ThemeBtn/>
           </div>
           <div style={{height:"5px",background:th.card,borderRadius:"3px",overflow:"hidden",marginTop:"10px"}}>
@@ -563,7 +759,7 @@ export default function App() {
                       <div style={{display:"flex",alignItems:"flex-start",gap:"12px",padding:"14px 18px"}}>
                         <div onClick={()=>toggleTask(d.day,block,i)}
                           style={{width:"24px",height:"24px",borderRadius:"7px",border:"2px solid "+(isDone?bm.color:th.border2),background:isDone?bm.color:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.2s",marginTop:"2px"}}>
-                          {isDone && <span style={{color:"white",fontSize:"13px",fontWeight:"800"}}>✓</span>}
+                          {isDone && <span style={{color:"white",fontSize:"13px",fontWeight:"800"}}>{String.fromCharCode(10003)}</span>}
                         </div>
                         <div style={{flex:1}}>
                           <div style={{fontSize:"15px",color:isDone?th.muted:th.text,lineHeight:"1.5",textDecoration:isDone?"line-through":"none",marginBottom:hasRes?"8px":"0"}}>{task}</div>
@@ -584,7 +780,7 @@ export default function App() {
 
           <div style={{background:th.surface,border:"1px solid "+th.border,borderRadius:"14px",marginBottom:"16px",overflow:"hidden"}}>
             <div style={{padding:"12px 18px",borderBottom:"1px solid "+th.border,display:"flex",gap:"8px",alignItems:"center"}}>
-              <span style={{fontSize:"18px"}}>📝</span>
+              <span style={{fontSize:"18px"}}>{String.fromCodePoint(128221)}</span>
               <span style={{fontSize:"16px",fontWeight:"700",color:th.text}}>My Notes - Day {d.day}</span>
             </div>
             <textarea value={notes[d.day]||""} onChange={e=>saveNotes({...notes,[d.day]:e.target.value})}
@@ -610,6 +806,19 @@ export default function App() {
               </div>
             )}
             {!fb && !aiLoad && <div style={{textAlign:"center",padding:"10px 0 0",color:th.muted,fontSize:"14px"}}>Complete some tasks first, then get your AI coaching feedback!</div>}
+          </div>
+
+          {/* Ask Sir Alam Banner */}
+          <div onClick={()=>setView("chat")}
+            style={{background:"linear-gradient(135deg,#065F46,#064E3B)",border:"1px solid #10B98144",borderRadius:"14px",padding:"16px 20px",marginBottom:"16px",cursor:"pointer",display:"flex",alignItems:"center",gap:"14px",transition:"all 0.2s"}}
+            onMouseEnter={e=>e.currentTarget.style.borderColor="#10B981"}
+            onMouseLeave={e=>e.currentTarget.style.borderColor="#10B98144"}>
+            <span style={{fontSize:"28px",flexShrink:0}}>{String.fromCodePoint(128104,8205,127979)}</span>
+            <div style={{flex:1}}>
+              <div style={{fontSize:"15px",fontWeight:"700",color:"white"}}>Ask Sir Alam</div>
+              <div style={{fontSize:"13px",color:"#6EE7B7",marginTop:"2px"}}>Confused about anything on Day {d.day}? Your AI Teacher is here to explain!</div>
+            </div>
+            <span style={{color:"#10B981",fontSize:"20px"}}>&#8594;</span>
           </div>
 
           <div style={{display:"flex",gap:"10px"}}>
@@ -655,10 +864,17 @@ export default function App() {
               Start My Journey - Day 1 Begins Now
             </button>
           ) : (
-            <button onClick={()=>{setSelDay(today);setView("day");}}
-              style={{width:"100%",background:"linear-gradient(135deg,#7C3AED,#3B82F6)",color:"white",border:"none",padding:"15px",borderRadius:"12px",cursor:"pointer",fontFamily:FONT,fontSize:"17px",fontWeight:"700"}}>
-              Open Day {today}: {DD[today-1]?.title}
-            </button>
+            <div style={{display:"flex",gap:"10px"}}>
+              <button onClick={()=>{setSelDay(today);setView("day");}}
+                style={{flex:2,background:"linear-gradient(135deg,#7C3AED,#3B82F6)",color:"white",border:"none",padding:"15px",borderRadius:"12px",cursor:"pointer",fontFamily:FONT,fontSize:"16px",fontWeight:"700"}}>
+                Open Day {today}: {DD[today-1]?.title}
+              </button>
+              <button onClick={()=>setView("chat")}
+                style={{flex:1,background:"linear-gradient(135deg,#065F46,#047857)",color:"white",border:"none",padding:"15px",borderRadius:"12px",cursor:"pointer",fontFamily:FONT,fontSize:"15px",fontWeight:"700",display:"flex",flexDirection:"column",alignItems:"center",gap:"2px"}}>
+                <span style={{fontSize:"20px"}}>{String.fromCodePoint(128104,8205,127979)}</span>
+                <span>Sir Alam</span>
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -695,7 +911,7 @@ export default function App() {
                       onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.borderColor=phase.color;}}
                       onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.borderColor=isTdy?"#7C3AED":pct===100?phase.color+"88":th.border;}}>
                       {pct===100 && <div style={{position:"absolute",top:-1,right:-1,width:"18px",height:"18px",background:"#10B981",borderRadius:"0 10px 0 8px",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                        <span style={{color:"white",fontSize:"10px"}}>✓</span>
+                        <span style={{color:"white",fontSize:"10px"}}>{String.fromCharCode(10003)}</span>
                       </div>}
                       <div style={{fontSize:"13px",fontWeight:"800",color:isTdy?"#7C3AED":phase.color,marginBottom:"3px"}}>D{d.day}</div>
                       {isTdy && <div style={{fontSize:"9px",color:"#7C3AED",fontWeight:"700",marginBottom:"2px",letterSpacing:"1px"}}>TODAY</div>}
