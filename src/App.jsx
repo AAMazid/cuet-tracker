@@ -2,12 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 
 const FONT = "Outfit, sans-serif";
 const GOOGLE_FONT = "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap";
-
-const r = await fetch('/api/gemini', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ contents, generationConfig: { temperature: 0.7, maxOutputTokens: 1024 } })
-});
+const GEMINI_KEY = import.meta.env.GEMINI_API_KEY || "";
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + GEMINI_KEY;
 
 const TEACHER_SYSTEM = "You are Sir Alam, a warm and expert AI Teacher for AAM (Md. Ashraful Alam Mazid), a new Mechanical Engineering student at CUET (Chittagong University of Engineering and Technology) in Bangladesh. " +
   "AAM is following a 60-day pre-campus preparation plan with 3 tracks: " +
