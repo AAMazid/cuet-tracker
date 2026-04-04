@@ -2,11 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 
 const FONT = "Outfit, sans-serif";
 const GOOGLE_FONT = "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap";
-const IS_VERCEL = window.location.hostname !== "claude.ai" && !window.location.hostname.includes("claude.ai");
-const API_URL = IS_VERCEL ? "/api/chat" : "https://api.anthropic.com/v1/messages";
-const API_HEADERS = IS_VERCEL
-  ? { "Content-Type": "application/json" }
-  : { "Content-Type": "application/json" };
+// API calls go through /api/chat relay (Gemini - free tier)
 
 const TEACHER_SYSTEM = "You are Sir Alam, a warm and expert AI Teacher for AAM (Md. Ashraful Alam Mazid), a new Mechanical Engineering student at CUET (Chittagong University of Engineering and Technology) in Bangladesh. " +
   "AAM is following a 60-day pre-campus preparation plan with 3 tracks: " +
@@ -430,7 +426,7 @@ export default function App() {
     const d=DD[dn-1]; const {done,total}=getCnt(dn);
     const doneList = Object.entries(d.blocks).flatMap(([b,data])=>data.tasks.filter((_,i)=>prog[dn+"-"+b+"-"+i])).slice(0,4);
     try {
-      const r = await fetch(API_URL,{method:"POST",headers:{"Content-Type":"application/json"},
+      const r = await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:900,
           system:"You are AAM's personal study coach. AAM (Md. Ashraful Alam Mazid) is a new CUET Mechanical Engineering student following a 60-day pre-campus preparation plan covering AI Automation, Engineering fundamentals, and English. He aims to earn freelance income on Upwork/Fiverr. Be warm, direct, specific. Under 160 words. Use emojis naturally.",
           messages:[{role:"user",content:"Day "+dn+" - "+d.title+" | "+done+"/"+total+" tasks done ("+Math.round(done/total*100)+"%)\nCompleted: "+doneList.join(" | ")+"\nNotes: "+(notes[dn]||"No notes")+"\nGive: 1) Progress assessment 2) Specific insight 3) Push for remaining 4) Tip for Day "+Math.min(60,dn+1)}]})});
@@ -463,7 +459,7 @@ export default function App() {
     ];
 
     try {
-      const r = await fetch(API_URL, {
+      const r = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
